@@ -5,6 +5,7 @@ import os
 import secrets
 import logging
 import mimetypes
+import base64
 import zipfile
 
 app = Flask(__name__)
