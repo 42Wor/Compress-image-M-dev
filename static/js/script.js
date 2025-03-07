@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // --- DOM Element References ---
     const fileInput = document.getElementById('file-input');
     const compressButton = document.getElementById('compress-button');
     const deleteAllButton = document.getElementById('delete-all-button');
@@ -12,9 +13,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabButtons = document.querySelectorAll('.tab-button');
     const tabContents = document.querySelectorAll('.tab-content');
 
-    let images = [];  // Store image data (base64, format, filename, size)
+    // --- State ---
+    let images = [];  // Store image data: { base64, format, filename, originalSize, compressedSize }
 
-     // Tab switching
+    // --- Utility Functions ---
+
+    function generateUniqueFilename(originalFilename, format) {
+        const baseName = originalFilename.split('.').slice(0, -1).join('.');
+        const timestamp = Date.now();
+        return `${baseName}_${timestamp}.${format.toLowerCase()}`;
+    }
+
+    function updateButtonStates() {
+        compressButton.disabled = fileInput.files.length === 0; // Disable if no files selected
+        deleteAllButton.disabled = images.length === 0;
+        downloadZipButton.style.display = images.length > 0 ? 'block' : 'none';
+    }
+
+
+    // --- Event Handlers ---
+
+    // Tab Switching
     tabButtons.forEach(button => {
         button.addEventListener('click', () => {
             const tabId = button.dataset.tab;
@@ -25,101 +44,100 @@ document.addEventListener('DOMContentLoaded', () => {
             button.classList.add('active');
             document.getElementById(`${tabId}-tab`).classList.add('active');
 
-              // Reset quality slider when switching tabs
+            // Reset quality slider when switching tabs (and show/hide size-tab)
             if (tabId === 'slider') {
                 qualitySlider.value = 75;
                 qualityValue.textContent = 75;
-           }
+            }
 
-            // Show/Hide display property of "size-tab" based on tab
-             const sizeTab = document.getElementById('size-tab');
-             sizeTab.style.display = tabId === 'size' ? 'flex' : 'none'; // Corrected display logic
+            const sizeTab = document.getElementById('size-tab');
+            sizeTab.style.display = tabId === 'size' ? 'flex' : 'none';
         });
     });
 
-
-
-    // Update quality value display
+    // Update Quality Value Display
     qualitySlider.addEventListener('input', () => {
         qualityValue.textContent = qualitySlider.value;
     });
 
-    fileInput.addEventListener('change', handleFileSelect);
-
-      compressButton.addEventListener('click', () => {
-        // Clear previous previews
-       // imagePreviewContainer.innerHTML = '';
-        // Loop through selected files and compress each
-        for (const file of fileInput.files) {
-             compressImage(file);
-        }
+    // File Input Change
+    fileInput.addEventListener('change', () => {
+        updateButtonStates();
     });
 
+    // Compress Button Click
+    compressButton.addEventListener('click', () => {
+      for (const file of fileInput.files) {
+        compressImage(file);
+      }
+    });
 
-
+    // Delete All Button Click
     deleteAllButton.addEventListener('click', deleteAllImages);
+
+    // Download Zip Button Click
     downloadZipButton.addEventListener('click', downloadZip);
 
-     function handleFileSelect(event) {
-         const files = event.target.files;
-           if (files.length>0) {
-             //  compressButton.disabled = false; // Enable compress button
-           }
-    }
-
-    function compressImage(file) {
-         let formData = new FormData();
-        formData.append('file', file);
-        formData.append('quality', qualitySlider.value);
-        formData.append('format', imageFormatSelect.value); //format
-
-        // Get target size based on selected unit
-        let targetSize = targetSizeInput.value;
-        if(targetSizeInput.value){
-            const unit = sizeUnitSelect.value;
-            if (unit === 'kb') {
-                targetSize = parseFloat(targetSize); // Already in KB
-            } else if (unit === 'mb') {
-                targetSize = parseFloat(targetSize); // No need to convert here, Python does it.
-             }
-        }
-        formData.append('targetSize', targetSize);
 
 
+    // --- Core Functions ---
 
-        fetch('/compress', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => {
-            if (!response.ok) {
-              return response.json().then(data => { throw new Error(data.error || 'Network response was not ok')});
+    async function compressImage(file) {
+        try {
+            if (!file.type.startsWith('image/')) {
+                throw new Error('Selected file is not an image.'); // Validate file type
             }
-           return response.json();
-        })
-        .then(data => {
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('quality', qualitySlider.value);
+            formData.append('format', imageFormatSelect.value);
+
+            let targetSize = null;
+             if (targetSizeInput.value) {
+               targetSize = parseFloat(targetSizeInput.value);
+                const unit = sizeUnitSelect.value;
+                if (unit === 'kb') {
+                    targetSize *= 1024; // Convert KB to bytes
+                } else if (unit === 'mb') {
+                    targetSize *= 1024 * 1024; // Convert MB to bytes
+                }
+             }
+
+            formData.append('targetSize', targetSize || ''); // Send empty string if null
+
+            const response = await fetch('/compress', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Network response was not ok');
+            }
+
+            const data = await response.json();
+
             if (data.success) {
-                addImagePreview(data.image, data.format, data.filename, data.size);
+                addImagePreview(data.image, data.format, data.filename, data.size, file.size); //Pass original size
                 images.push({
                     image: data.image,
                     format: data.format,
-                    filename: generateUniqueFilename(data.filename, data.format), // Generate unique name
-                    size: data.size
+                    filename: generateUniqueFilename(data.filename, data.format),
+                    originalSize: file.size,  // Store original size
+                    compressedSize: data.size
                 });
-                downloadZipButton.style.display = 'block';  // Show download button
+                updateButtonStates();
             } else {
-                console.error('Compression error:', data.error);
-                alert(`Compression error: ${data.error}`); // Display error to user
+                throw new Error(data.error);
             }
-        })
-        .catch(error => {
+
+        } catch (error) {
             console.error('Error:', error);
-            alert(`An error occurred: ${error.message}`); // Display error
-        });
+            alert(`An error occurred: ${error.message}`);
+        }
     }
-
-
-    function addImagePreview(imageBase64, format, filename, size) {
+   function addImagePreview(imageBase64, format, filename, compressedSize, originalSize) {
         const previewDiv = document.createElement('div');
         previewDiv.classList.add('image-preview');
 
@@ -129,79 +147,74 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const closeButton = document.createElement('button');
         closeButton.classList.add('close-button');
-        closeButton.innerHTML = '×'; // Use '×' character
-        closeButton.addEventListener('click', () => {
-             removeImage(previewDiv, filename); // Pass filename for removal
-        });
+        closeButton.innerHTML = '×';
+        closeButton.addEventListener('click', () => removeImage(previewDiv, filename));
         previewDiv.appendChild(closeButton);
 
-        const sizeSpan = document.createElement('span'); // Display Size
-        sizeSpan.textContent = `New Size: ${(size / 1024).toFixed(2)} KB`; // Convert size
-        previewDiv.appendChild(sizeSpan);
+        // Display BOTH Original and New Sizes
+        const sizeInfo = document.createElement('div');
+        sizeInfo.innerHTML = `
+            Original Size: ${(originalSize / 1024).toFixed(2)} KB<br>
+            New Size: ${(compressedSize / 1024).toFixed(2)} KB
+        `;
+        previewDiv.appendChild(sizeInfo);
 
 
         const downloadButton = document.createElement('button');
         downloadButton.textContent = 'Download';
         downloadButton.classList.add('download-button');
-        downloadButton.addEventListener('click', () => {
-              downloadSingleImage(imageBase64, generateUniqueFilename(filename, format)); // Use unique filename
-        });
+        downloadButton.addEventListener('click', () => downloadSingleImage(imageBase64, generateUniqueFilename(filename, format)));
         previewDiv.appendChild(downloadButton);
 
         imagePreviewContainer.appendChild(previewDiv);
     }
 
-     function downloadSingleImage(imageBase64, filename) {
+
+
+    function downloadSingleImage(imageBase64, filename) {
         const link = document.createElement('a');
-        link.href = `data:image/png;base64,${imageBase64}`; // Corrected MIME type
+        link.href = `data:image/png;base64,${imageBase64}`;  //MIME type should be dynamic
         link.download = filename;
-        document.body.appendChild(link); // Required for Firefox
+        document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     }
 
     function removeImage(previewDiv, filename) {
-        // Find the index of the image to remove
-        const index = images.findIndex(imgData => imgData.filename === filename);
-        if (index > -1) {
-            images.splice(index, 1); // Remove from the images array
-        }
-        previewDiv.remove(); // Remove the preview from the DOM
-
-        // If no images left, hide the download button
-        if (images.length === 0) {
-            downloadZipButton.style.display = 'none';
-        }
+        images = images.filter(imgData => imgData.filename !== filename);
+        previewDiv.remove();
+        updateButtonStates();
     }
-
 
     function deleteAllImages() {
-        images = []; // Clear the images array
-        imagePreviewContainer.innerHTML = ''; // Clear all previews
-        downloadZipButton.style.display = 'none'; // Hide download button
-        fileInput.value = '';  // Clear file input
+        images = [];
+        imagePreviewContainer.innerHTML = '';
+        fileInput.value = ''; // Clear the file input
+        updateButtonStates();
     }
 
-    function downloadZip() {
+
+    async function downloadZip() {
         if (images.length === 0) {
             alert('No images to download.');
             return;
         }
 
-        fetch('/download_zip', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(images)
-        })
-        .then(response => {
+        try {
+            const response = await fetch('/download_zip', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(images)
+            });
+
             if (!response.ok) {
-               return response.json().then(data => { throw new Error(data.error || 'Failed to create ZIP.'); });
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to create ZIP.');
             }
-            return response.blob();
-        })
-        .then(blob => {
+
+            const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -210,16 +223,10 @@ document.addEventListener('DOMContentLoaded', () => {
             a.click();
             window.URL.revokeObjectURL(url);
             a.remove();
-        })
-        .catch(error => {
-            console.error('Error downloading ZIP:', error);
-             alert(`Error downloading ZIP: ${error.message}`); // Display error
-        });
-    }
-    function generateUniqueFilename(originalFilename, format) {
-        const baseName = originalFilename.split('.').slice(0, -1).join('.'); // Remove extension
-        const timestamp = Date.now();
-        return `${baseName}_${timestamp}.${format.toLowerCase()}`;
-    }
 
+        } catch (error) {
+            console.error('Error downloading ZIP:', error);
+            alert(`Error downloading ZIP: ${error.message}`);
+        }
+    }
 });
