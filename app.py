@@ -58,6 +58,7 @@ def index():
             'compressed_image_size_kb': compressed_image_size_kb # Include size in JSON response
         })
     else:
+        delete_images()
         return render_template('index.html')
 
 def compress_image(image_path, output_folder, filename):
@@ -91,6 +92,13 @@ def download_image(filename):
         return send_file(compressed_file_path, as_attachment=True)
     else:
         return "File not found.", 404
+
+def delete_images():
+        for folder in [app.config['UPLOAD_FOLDER'], app.config['COMPRESSED_FOLDER']]:
+            for filename in os.listdir(folder):
+                file_path = os.path.join(folder, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
 
 if __name__ == '__main__':
     app.run(debug=True)
