@@ -1,4 +1,8 @@
 document.addEventListener('DOMContentLoaded', function () {
+    // Remove 'loading' class from body when DOM is ready to trigger CSS background change
+    document.body.classList.remove('loading');
+    document.body.classList.add('loaded'); // Add 'loaded' class to show background image and content
+
     const uploadButton = document.getElementById('upload-button');
     const fileInput = document.getElementById('file-input');
     const imageComparisonView = document.getElementById('image-comparison-view');

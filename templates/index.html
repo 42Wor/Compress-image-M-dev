@@ -6,8 +6,12 @@
     <title>Image Uploader</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css.css') }}">
 </head>
-<body>
-    <div class="container">
+<body class="loading"> <!-- Initial class 'loading' on body -->
+    <div class="loading-spinner"></div> <!-- Loading spinner element -->
+    <div class="content container"> <!-- Added 'content' class to container -->
+        <h1>Image Compressor</h1>
+        <p class="subtitle">Upload and compress your images easily.</p>
+
         <div id="upload-button-container">
             <button id="upload-button">Upload Image</button>
         </div>
@@ -42,6 +46,6 @@
 
     </div>
 
+    <script src="{{ url_for('static', filename='js.js') }}"></script>
 </body>
-<script src="{{ url_for('static', filename='js.js') }}"></script>
 </html>
